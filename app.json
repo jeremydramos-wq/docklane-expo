@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Docklane Driver",
+    "slug": "docklane",
+    "owner": "docklane",
+    "scheme": "docklane",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ie.docklane.driver"
+    },
+    "android": {
+      "package": "ie.docklane.driver",
+      "versionCode": 1
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8e1abce1-7296-4aff-a3b3-81e2bfc58fac"
+      }
+    }
+  }
+}
