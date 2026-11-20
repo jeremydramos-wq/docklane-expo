@@ -11,7 +11,7 @@ const memory=new Map<string,string>();
 const storage=Platform.OS==='web'?{getItem:async(k:string)=>memory.get(k)??null,setItem:async(k:string,v:string)=>{memory.set(k,v);},removeItem:async(k:string)=>{memory.delete(k);}}:createSecureStorage(SecureStore);
 export const supabase=createClient(url,key,{auth:{storage,persistSession:Platform.OS!=='web',autoRefreshToken:true,detectSessionInUrl:false,lock:processLock}});
 export function watchAuthRefresh() {
-  const sync=(state:string)=>state==='active'?supabase.auth.startAutoRefresh():supabase.auth.stopAutoRefresh();
+  const sync=(state:string|null|undefined)=>state==='active'?supabase.auth.startAutoRefresh():supabase.auth.stopAutoRefresh();
   sync(AppState.currentState);
   const listener=AppState.addEventListener('change',sync);
   return ()=>{listener.remove();supabase.auth.stopAutoRefresh();};

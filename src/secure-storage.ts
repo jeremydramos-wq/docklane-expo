@@ -31,7 +31,7 @@ export function createSecureStorage(vault:NativeVault) {
     setItem:(key:string,value:string)=>locked(async()=>{
       const k=base(key),old=manifest(await vault.getItemAsync(k+'.manifest')),chunks=splitUtf8(value);
       if(chunks.length>128)throw new Error('The authentication session is too large to store securely.');
-      const m:Manifest={v:1,g:Date.now().toString(36)+(sequence++).toString(36),n:chunks.length};
+      const m:Manifest={v:1,g:Date.now().toString(36)+(sequence++).toString(36)+Math.random().toString(36).slice(2),n:chunks.length};
       try {for(let i=0;i<chunks.length;i++)await vault.setItemAsync(part(k,m,i),chunks[i]!);await vault.setItemAsync(k+'.manifest',JSON.stringify(m));}
       catch(e){await clean(k,m);throw e;}await clean(k,old);
     }),

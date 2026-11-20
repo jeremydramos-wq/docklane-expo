@@ -6,6 +6,8 @@ import type {Session} from '@supabase/supabase-js';
 import {acknowledge,driverJobs,supabase,watchAuthRefresh} from './src/supabase';
 import {acceptanceText,canAccept,clockOffset,directionsUrl,irishTime,mmss,orderJobs,remainingMs} from './src/jobs';
 import type {DriverJob} from './src/jobs';
+import { DriverInbox, DriverDocuments } from './src/inbox-views';
+import type { InboxItem } from './src/inbox';
 
 const explain=(e:unknown)=>e instanceof Error?e.message:'The request could not be completed. Try again.';
 function Button({title,onPress,disabled=false,secondary=false}:{title:string;onPress:()=>void;disabled?:boolean;secondary?:boolean}){
@@ -71,6 +73,7 @@ function Detail({job,now,offset,busy,accept}:{job:DriverJob;now:number;offset:nu
 function DriverWorkspace(){
   const[jobs,setJobs]=useState<DriverJob[]>([]),[offset,setOffset]=useState(0),[now,setNow]=useState(Date.now()),[busy,setBusy]=useState(true),[loaded,setLoaded]=useState(false),[accepting,setAccepting]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState<string|null>(null);
   const mounted=useRef(true),loading=useRef(false),expired=useRef(new Set<string>());
+  const [tab,setTab]=useState<'jobs'|'inbox'|'documents'>('jobs'),[unread,setUnread]=useState(0);
   const refresh=useCallback(async()=>{
     if(loading.current)return;loading.current=true;if(mounted.current)setBusy(true);
     try{const sent=Date.now(),snapshot=await driverJobs(),received=Date.now();if(!mounted.current)return;
@@ -96,9 +99,12 @@ function DriverWorkspace(){
     catch(e){if(mounted.current)setError(explain(e));}finally{await refresh();if(mounted.current)setAccepting(false);}
   }
   const selectedJob=jobs.find(j=>j.id===selected);
+  const openInbox=(item:InboxItem)=>{if(item.kind.startsWith('expiry')||item.link.view==='fleet_document'){setTab('documents');return;}setTab('jobs');setSelected(jobs.some(j=>j.id===item.link.ref)?item.link.ref!:null);void refresh();};
   const confirmAccept=()=>{if(selectedJob)Alert.alert('Accept this assignment?','This acknowledges the job. It does not sign a carriage contract or grant permission to dispatch.',[{text:'Go back',style:'cancel'},{text:'Accept job',onPress:()=>void accept(selectedJob)}]);};
   return <View style={s.fill}>
     <View style={s.header}><Brand/><Pressable accessibilityRole="button" onPress={()=>Alert.alert('Sign out?','You will be signed out on this device.',[{text:'Stay signed in',style:'cancel'},{text:'Sign out',onPress:()=>void supabase.auth.signOut({scope:'local'}).then(({error})=>{if(error)setError(error.message);})}])}><Text style={s.link}>Sign out</Text></Pressable></View>
+    <View style={[s.row,{paddingHorizontal:20,paddingVertical:12}]}>{(['jobs','inbox','documents'] as const).map(key=><Pressable key={key} accessibilityRole="tab" accessibilityState={{selected:tab===key}} onPress={()=>setTab(key)} style={[s.button,s.secondary,{flex:1,paddingHorizontal:8,paddingVertical:12},tab===key&&{borderColor:'#c6f888'}]}><Text style={s.secondaryText}>{key==='jobs'?'Jobs':key==='inbox'?'Inbox'+(unread?' ('+unread+')':''):'Documents'}</Text></Pressable>)}</View>
+    {tab==='inbox'?<DriverInbox open={openInbox} changed={setUnread}/>:tab==='documents'?<DriverDocuments/>:
     <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={busy&&loaded} onRefresh={()=>void refresh()} tintColor="#c6f888"/>}>
       {selectedJob?<Button secondary title="← All jobs" onPress={()=>setSelected(null)}/>:<View><Text accessibilityRole="header" style={s.title}>Your jobs</Text><Text style={s.muted}>{jobs.filter(j=>j.acceptance_state==='awaiting_acceptance').length} awaiting acceptance · Irish time</Text></View>}
       {!!notice&&<Text accessibilityRole="alert" style={s.notice}>{notice}</Text>}
@@ -107,7 +113,7 @@ function DriverWorkspace(){
       {loaded&&!jobs.length&&<View style={s.card}><Text style={s.address}>No assigned jobs</Text><Text style={s.meta}>Your next assignment will appear here. Contact your transport manager if you expected a job.</Text><Button secondary title="Refresh jobs" onPress={()=>void refresh()}/></View>}
       {selectedJob?<Detail job={selectedJob} now={now} offset={offset} busy={accepting} accept={confirmAccept}/>:jobs.map(job=><JobCard key={job.id} job={job} now={now} offset={offset} open={()=>{setSelected(job.id);setNotice('');}}/>)}
       <Text style={s.footnote}>Pull down to refresh. Deadlines are controlled by Docklane; changing the phone clock does not extend an award.</Text>
-    </ScrollView>
+    </ScrollView>}
   </View>;
 }
 export default function App(){
@@ -117,7 +123,7 @@ export default function App(){
     const{data}=supabase.auth.onAuthStateChange((_event,next)=>{if(active)setSession(next);});
     return()=>{active=false;stop();data.subscription.unsubscribe();};
   },[]);
-  return <SafeAreaProvider><SafeAreaView style={s.safe}><StatusBar barStyle="light-content" backgroundColor="#101711"/>
+  return <SafeAreaProvider><SafeAreaView style={s.safe}><StatusBar barStyle="light-content"/>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     {session===undefined?<ActivityIndicator accessibilityLabel="Loading account" color="#c6f888" style={s.fill}/>:session?<DriverWorkspace key={session.user.id}/>:<Auth/>}
   </SafeAreaView></SafeAreaProvider>;

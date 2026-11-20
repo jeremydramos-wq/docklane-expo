@@ -1,0 +1,5 @@
+
+import {test} from 'node:test';import assert from 'node:assert/strict';import {mergeInbox,normaliseInbox,expiryLabel} from '../src/inbox.ts';
+test('inbox updates merge without duplicates and preserve latest read state',()=>{const a={id:'a',created_at:'2026-11-20T12:00:00Z',read:false},b={id:'b',created_at:'2026-11-20T11:00:00Z',read:true};const result=mergeInbox([a],[{...a,read:true},b]);assert.equal(result.length,2);assert.equal(result[0].read,true);});
+test('notification projection retains only intended link fields',()=>{const value=normaliseInbox({unread:1,items:[{id:'a',kind:'award',title:'New job',body:'Dublin to Cork',created_at:'2026-11-20T12:00:00Z',read:false,private_address:'Hidden',link:{view:'driver_jobs',ref:'job',url:'https://untrusted.invalid'}}]});assert.equal(value.items[0].private_address,undefined);assert.equal(value.items[0].link.url,undefined);});
+test('expiry status distinguishes unapproved renewal from expiry warning',()=>{assert.equal(expiryLabel('renewal_pending'),'Renewal in review');assert.equal(expiryLabel('nearing'),'Nearing expiry');});

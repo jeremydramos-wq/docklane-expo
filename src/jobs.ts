@@ -1,5 +1,5 @@
 
-export type AcceptanceState = 'awaiting_acceptance' | 'awaiting_driver' | 'accepted' | 'accepted_on_behalf' | 'timed_out' | 'released';
+export type AcceptanceState = 'awaiting_acceptance' | 'awaiting_driver' | 'accepted' | 'accepted_on_behalf' | 'timed_out' | 'released' | 'expired';
 export type DriverJob = {
   id: string; pickup_area: string; delivery_area: string; pickup_address: string | null; delivery_address: string | null;
   pickup_from: string; pickup_until: string; deliver_by: string; equipment: string; pallets: number; weight_kg: number;
@@ -7,7 +7,7 @@ export type DriverJob = {
   haulier_name: string | null; source: 'marketplace' | 'operator' | 'legacy';
 };
 export type Snapshot = { server_now: string; items: DriverJob[] };
-const states = new Set<AcceptanceState>(['awaiting_acceptance','awaiting_driver','accepted','accepted_on_behalf','timed_out','released']);
+const states = new Set<AcceptanceState>(['awaiting_acceptance','awaiting_driver','accepted','accepted_on_behalf','timed_out','released','expired']);
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 const str = (v: unknown) => typeof v === 'string' ? v : '';
 const nullable = (v: unknown) => typeof v === 'string' && v ? v : null;
@@ -48,7 +48,7 @@ export function canAccept(job: DriverJob, now: number, offset=0): boolean {
 }
 export const acceptanceText=(job:DriverJob) => job.on_behalf || job.acceptance_state==='accepted_on_behalf' ? 'Accepted by your haulier'
   : job.acknowledged_at ? 'Accepted' : job.acceptance_state==='timed_out' ? 'Acceptance window closed'
-  : job.acceptance_state==='released' ? 'Award released' : job.acceptance_state==='awaiting_acceptance' ? 'Awaiting your acceptance' : 'Awaiting acknowledgement';
+  : job.acceptance_state==='expired' ? 'Collection time has passed' : job.acceptance_state==='released' ? 'Award released' : job.acceptance_state==='awaiting_acceptance' ? 'Awaiting your acceptance' : 'Awaiting acknowledgement';
 export const orderJobs=(items:DriverJob[])=>[...items].sort((a,b)=>{
   const x=a.acceptance_state==='awaiting_acceptance'?0:1,y=b.acceptance_state==='awaiting_acceptance'?0:1;
   return x-y || Date.parse(x===0?a.accept_by??a.pickup_from:a.pickup_from)-Date.parse(y===0?b.accept_by??b.pickup_from:b.pickup_from);
