@@ -1,12 +1,13 @@
 {
   "expo": {
-    "name": "Docklane Driver",
+    "name": "Hauller Driver",
+    "icon": "./assets/hauller-icon.png",
     "slug": "docklane",
     "owner": "docklane",
     "scheme": "docklane",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ie.docklane.driver"

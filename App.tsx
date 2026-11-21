@@ -8,6 +8,8 @@ import {acceptanceText,canAccept,clockOffset,directionsUrl,irishTime,mmss,orderJ
 import type {DriverJob} from './src/jobs';
 import { DriverInbox, DriverDocuments } from './src/inbox-views';
 import type { InboxItem } from './src/inbox';
+import {useFonts} from 'expo-font';
+import {brandFonts,colour,font,HaullerWordmark} from './src/brand';
 
 const explain=(e:unknown)=>e instanceof Error?e.message:'The request could not be completed. Try again.';
 function Button({title,onPress,disabled=false,secondary=false}:{title:string;onPress:()=>void;disabled?:boolean;secondary?:boolean}){
@@ -16,7 +18,7 @@ function Button({title,onPress,disabled=false,secondary=false}:{title:string;onP
     <Text style={[s.buttonText,secondary&&s.secondaryText]}>{title}</Text>
   </Pressable>;
 }
-function Brand(){return <View><Text style={s.brand}>docklane<Text style={s.lime}>.</Text></Text><Text style={s.eyebrow}>DRIVER</Text></View>;}
+function Brand(){return <View style={s.brand}><HaullerWordmark/><Text style={s.eyebrow}>Driver</Text></View>;}
 function Auth(){
   const[email,setEmail]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   async function signIn(){if(busy)return;setBusy(true);setError('');
@@ -25,13 +27,14 @@ function Auth(){
   }
   return <KeyboardAvoidingView style={s.fill} behavior={Platform.OS==='ios'?'padding':undefined}>
     <ScrollView contentContainerStyle={s.auth} keyboardShouldPersistTaps="handled">
-      <Brand/><Text accessibilityRole="header" style={s.hero}>Your next move,<Text style={s.lime}> connected.</Text></Text>
+      <Brand/><Text accessibilityRole="header" style={s.hero}>Haulage.{'\n'}Made simple.</Text>
       <Text style={s.muted}>Sign in with the account your haulier invited.</Text>
       <Text style={s.label}>Email</Text><TextInput accessibilityLabel="Email" style={s.input} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" textContentType="emailAddress" editable={!busy}/>
       <Text style={s.label}>Password</Text><TextInput accessibilityLabel="Password" style={s.input} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" textContentType="password" editable={!busy} onSubmitEditing={()=>void signIn()}/>
       {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Button title={busy?'Signing in…':'Sign in'} disabled={busy||!email.trim()||!password} onPress={()=>void signIn()}/>
-      <Text style={s.footnote}>Need access or a password reset? Contact your transport manager or Docklane Operations.</Text>
+      <Text style={s.footnote}>Need access or a password reset? Contact your transport manager or Hauller Operations.</Text>
+      <Text style={s.domain}>hauller.app</Text>
     </ScrollView>
   </KeyboardAvoidingView>;
 }
@@ -39,11 +42,11 @@ function JobCard({job,now,offset,open}:{job:DriverJob;now:number;offset:number;o
   const pending=job.acceptance_state==='awaiting_acceptance'&&!job.acknowledged_at;
   const left=remainingMs(job.accept_by,now,offset),ready=canAccept(job,now,offset);
   return <Pressable accessibilityRole="button" accessibilityLabel={job.pickup_area+' to '+job.delivery_area+', '+acceptanceText(job)} onPress={open} style={[s.card,pending&&s.urgent]}>
-    <View style={s.row}><Text style={s.tag}>{pending?'ACTION REQUIRED':acceptanceText(job).toUpperCase()}</Text>{pending&&<Text accessibilityRole="timer" accessibilityLiveRegion="none" style={[s.timer,left===0&&s.error]}>{mmss(left)}</Text>}</View>
+    <View style={s.row}><Text style={[s.tag,pending&&s.pendingTag]}>{pending?'Awaiting your confirmation':acceptanceText(job)}</Text>{pending&&<Text accessibilityRole="timer" accessibilityLiveRegion="none" style={[s.timer,left===0&&s.error]}>{mmss(left)}</Text>}</View>
     <Text accessibilityRole="header" style={s.route}>{job.pickup_area}<Text style={s.muted}> → </Text>{job.delivery_area}</Text>
     <Text style={s.meta}>Collection · {irishTime(job.pickup_from)}</Text>
     {!!job.haulier_name&&<Text style={s.meta}>{job.haulier_name}</Text>}
-    <Text style={[s.cardAction,pending&&s.lime]}>{pending?(ready?'Review & accept →':'Acceptance window closed · refreshing…'):job.on_behalf?'Accepted by your haulier · View job →':'View job →'}</Text>
+    <Text style={[s.cardAction,pending&&s.accent]}>{pending?(ready?'Review assignment':'Acceptance window closed · refreshing…'):job.on_behalf?'Accepted by your haulier · View job':'View job'}</Text>
   </Pressable>;
 }
 function Detail({job,now,offset,busy,accept}:{job:DriverJob;now:number;offset:number;busy:boolean;accept:()=>void}){
@@ -51,23 +54,23 @@ function Detail({job,now,offset,busy,accept}:{job:DriverJob;now:number;offset:nu
   const navigate=(address:string)=>void Linking.openURL(directionsUrl(address)).catch(()=>Alert.alert('Maps unavailable','Open your maps app and enter the address shown.'));
   return <View style={s.gap}>
     <View style={[s.card,pending&&s.urgent]}>
-      <Text style={s.tag}>{acceptanceText(job).toUpperCase()}</Text>
+      <Text style={[s.tag,pending&&s.pendingTag]}>{acceptanceText(job)}</Text>
       {pending&&<><Text accessibilityRole="timer" accessibilityLiveRegion="none" style={s.bigTimer}>{mmss(remainingMs(job.accept_by,now,offset))}</Text>
         <Text style={s.muted}>Time left to accept · deadline {irishTime(job.accept_by!)}</Text></>}
       <Text accessibilityRole="header" style={s.route}>{job.pickup_area} → {job.delivery_area}</Text>
       <Text style={s.meta}>All times shown in Irish time.</Text>
     </View>
-    <View style={s.card}><Text style={s.label}>COLLECTION</Text><Text style={s.address}>{job.pickup_address||job.pickup_area}</Text>
+    <View style={s.card}><Text style={s.label}>Collection</Text><Text style={s.address}>{job.pickup_address||job.pickup_area}</Text>
       <Text style={s.meta}>{irishTime(job.pickup_from)} – {irishTime(job.pickup_until)}</Text>
       {!!job.pickup_address&&<Button secondary title="Directions to collection" onPress={()=>navigate(job.pickup_address!)}/>}
-      <View style={s.divider}/><Text style={s.label}>DELIVERY</Text><Text style={s.address}>{job.delivery_address||job.delivery_area}</Text>
+      <View style={s.divider}/><Text style={s.label}>Delivery</Text><Text style={s.address}>{job.delivery_address||job.delivery_area}</Text>
       <Text style={s.meta}>By {irishTime(job.deliver_by)}</Text>
       {!!job.delivery_address&&<Button secondary title="Directions to delivery" onPress={()=>navigate(job.delivery_address!)}/>}
     </View>
-    <View style={s.card}><Text style={s.label}>LOAD</Text><Text style={s.address}>{job.equipment.replaceAll('_',' ')} · {job.pallets} pallets</Text><Text style={s.meta}>{job.weight_kg.toLocaleString('en-IE')} kg{job.haulier_name?' · '+job.haulier_name:''}</Text></View>
-    {canAccept(job,now,offset)&&<><Button title={busy?'Accepting…':'Accept job'} disabled={busy} onPress={accept}/><Text style={s.footnote}>Acceptance acknowledges this assignment. It is not a signed carriage contract or permission to dispatch.</Text></>}
+    <View style={s.card}><Text style={s.label}>Load</Text><Text style={s.address}>{job.equipment.replaceAll('_',' ')} · {job.pallets} pallets</Text><Text style={s.meta}>{job.weight_kg.toLocaleString('en-IE')} kg{job.haulier_name?' · '+job.haulier_name:''}</Text></View>
+    {canAccept(job,now,offset)&&<><Button title={busy?'Accepting…':'Confirm assignment'} disabled={busy} onPress={accept}/><Text style={s.footnote}>Acceptance acknowledges this assignment. It is not a signed carriage contract or permission to dispatch.</Text></>}
     {!job.acknowledged_at&&!canAccept(job,now,offset)&&<Text accessibilityRole="alert" style={s.warning}>This award can no longer be accepted. Pull down to refresh your assignments.</Text>}
-    {job.acknowledged_at&&<View style={s.card}><Text style={s.lime}>{job.on_behalf?'Your haulier accepted this assignment on your behalf.':'You accepted this assignment.'}</Text><Text style={s.meta}>{irishTime(job.acknowledged_at)}</Text></View>}
+    {job.acknowledged_at&&<View style={s.card}><Text style={s.accepted}>{job.on_behalf?'Your haulier accepted this assignment on your behalf.':'You accepted this assignment.'}</Text><Text style={s.meta}>{irishTime(job.acknowledged_at)}</Text></View>}
   </View>;
 }
 function DriverWorkspace(){
@@ -100,48 +103,50 @@ function DriverWorkspace(){
   }
   const selectedJob=jobs.find(j=>j.id===selected);
   const openInbox=(item:InboxItem)=>{if(item.kind.startsWith('expiry')||item.link.view==='fleet_document'){setTab('documents');return;}setTab('jobs');setSelected(jobs.some(j=>j.id===item.link.ref)?item.link.ref!:null);void refresh();};
-  const confirmAccept=()=>{if(selectedJob)Alert.alert('Accept this assignment?','This acknowledges the job. It does not sign a carriage contract or grant permission to dispatch.',[{text:'Go back',style:'cancel'},{text:'Accept job',onPress:()=>void accept(selectedJob)}]);};
+  const confirmAccept=()=>{if(selectedJob)Alert.alert('Confirm this assignment?','This acknowledges the job. It does not sign a carriage contract or grant permission to dispatch.',[{text:'Go back',style:'cancel'},{text:'Confirm assignment',onPress:()=>void accept(selectedJob)}]);};
   return <View style={s.fill}>
     <View style={s.header}><Brand/><Pressable accessibilityRole="button" onPress={()=>Alert.alert('Sign out?','You will be signed out on this device.',[{text:'Stay signed in',style:'cancel'},{text:'Sign out',onPress:()=>void supabase.auth.signOut({scope:'local'}).then(({error})=>{if(error)setError(error.message);})}])}><Text style={s.link}>Sign out</Text></Pressable></View>
-    <View style={[s.row,{paddingHorizontal:20,paddingVertical:12}]}>{(['jobs','inbox','documents'] as const).map(key=><Pressable key={key} accessibilityRole="tab" accessibilityState={{selected:tab===key}} onPress={()=>setTab(key)} style={[s.button,s.secondary,{flex:1,paddingHorizontal:8,paddingVertical:12},tab===key&&{borderColor:'#c6f888'}]}><Text style={s.secondaryText}>{key==='jobs'?'Jobs':key==='inbox'?'Inbox'+(unread?' ('+unread+')':''):'Documents'}</Text></Pressable>)}</View>
     {tab==='inbox'?<DriverInbox open={openInbox} changed={setUnread}/>:tab==='documents'?<DriverDocuments/>:
-    <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={busy&&loaded} onRefresh={()=>void refresh()} tintColor="#c6f888"/>}>
-      {selectedJob?<Button secondary title="← All jobs" onPress={()=>setSelected(null)}/>:<View><Text accessibilityRole="header" style={s.title}>Your jobs</Text><Text style={s.muted}>{jobs.filter(j=>j.acceptance_state==='awaiting_acceptance').length} awaiting acceptance · Irish time</Text></View>}
+    <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={busy&&loaded} onRefresh={()=>void refresh()} tintColor={colour.cobalt}/> }>
+      {selectedJob?<Button secondary title="All jobs" onPress={()=>setSelected(null)}/>:<View><Text accessibilityRole="header" style={s.title}>Your jobs</Text><Text style={s.muted}>{jobs.filter(j=>j.acceptance_state==='awaiting_acceptance').length} awaiting acceptance · Irish time</Text></View>}
       {!!notice&&<Text accessibilityRole="alert" style={s.notice}>{notice}</Text>}
       {!!error&&<View style={s.errorPanel}><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button secondary title="Refresh" onPress={()=>void refresh()}/></View>}
-      {busy&&!loaded&&<ActivityIndicator accessibilityLabel="Loading assigned jobs" color="#c6f888" size="large"/>}
+      {busy&&!loaded&&<ActivityIndicator accessibilityLabel="Loading assigned jobs" color={colour.cobalt} size="large"/>}
       {loaded&&!jobs.length&&<View style={s.card}><Text style={s.address}>No assigned jobs</Text><Text style={s.meta}>Your next assignment will appear here. Contact your transport manager if you expected a job.</Text><Button secondary title="Refresh jobs" onPress={()=>void refresh()}/></View>}
       {selectedJob?<Detail job={selectedJob} now={now} offset={offset} busy={accepting} accept={confirmAccept}/>:jobs.map(job=><JobCard key={job.id} job={job} now={now} offset={offset} open={()=>{setSelected(job.id);setNotice('');}}/>)}
-      <Text style={s.footnote}>Pull down to refresh. Deadlines are controlled by Docklane; changing the phone clock does not extend an award.</Text>
+      <Text style={s.footnote}>Pull down to refresh. Deadlines are controlled by Hauller; changing the phone clock does not extend an award.</Text>
     </ScrollView>}
+    <View accessibilityRole="tablist" style={s.navigation}>{(['jobs','inbox','documents'] as const).map(key=><Pressable key={key} accessibilityRole="tab" accessibilityState={{selected:tab===key}} onPress={()=>setTab(key)} style={[s.navItem,tab===key&&s.navSelected]}><Text style={[s.navText,tab===key&&s.navTextSelected]}>{key==='jobs'?'Jobs':key==='inbox'?'Inbox'+(unread?' ('+unread+')':''):'Documents'}</Text></Pressable>)}</View>
   </View>;
 }
 export default function App(){
+  const[fontsLoaded,fontError]=useFonts(brandFonts);
   const[session,setSession]=useState<Session|null|undefined>(),[error,setError]=useState('');
   useEffect(()=>{let active=true;const stop=watchAuthRefresh();
     void supabase.auth.getSession().then(({data,error})=>{if(active){setSession(data.session);if(error)setError(error.message);}}).catch(e=>{if(active){setError(explain(e));setSession(null);}});
     const{data}=supabase.auth.onAuthStateChange((_event,next)=>{if(active)setSession(next);});
     return()=>{active=false;stop();data.subscription.unsubscribe();};
   },[]);
-  return <SafeAreaProvider><SafeAreaView style={s.safe}><StatusBar barStyle="light-content"/>
+  return <SafeAreaProvider><SafeAreaView style={s.safe}><StatusBar barStyle="dark-content"/>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    {session===undefined?<ActivityIndicator accessibilityLabel="Loading account" color="#c6f888" style={s.fill}/>:session?<DriverWorkspace key={session.user.id}/>:<Auth/>}
+    {(!fontsLoaded&&!fontError)||session===undefined?<ActivityIndicator accessibilityLabel="Loading account" color={colour.cobalt} style={s.fill}/>:session?<DriverWorkspace key={session.user.id}/>:<Auth/>}
   </SafeAreaView></SafeAreaProvider>;
 }
 const s=StyleSheet.create({
-  safe:{flex:1,backgroundColor:'#101711'},fill:{flex:1},header:{padding:22,flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderBottomWidth:1,borderColor:'#293529'},
-  brand:{fontSize:30,fontWeight:'800',letterSpacing:-1.5,color:'#f3f6ef'},lime:{color:'#c6f888'},eyebrow:{fontSize:10,letterSpacing:4,color:'#bac5b4',marginTop:3},
-  hero:{fontSize:40,lineHeight:46,fontWeight:'700',color:'#f3f6ef',marginTop:40,marginBottom:18},title:{fontSize:30,fontWeight:'700',color:'#f3f6ef',marginBottom:8},
-  auth:{flexGrow:1,padding:28,justifyContent:'center',gap:15},content:{padding:20,gap:18,paddingBottom:50},gap:{gap:18},
-  muted:{color:'#aebba7',fontSize:15,lineHeight:23},label:{color:'#b6c4ae',fontSize:12,fontWeight:'700',letterSpacing:1.2,marginTop:6,marginBottom:8},
-  input:{borderWidth:1,borderColor:'#42523b',borderRadius:12,padding:16,color:'#f3f6ef',fontSize:17,backgroundColor:'#1a251a'},
-  button:{backgroundColor:'#c6f888',borderRadius:14,paddingVertical:17,paddingHorizontal:20,alignItems:'center',justifyContent:'center',minHeight:54},
-  secondary:{backgroundColor:'#243321',borderWidth:1,borderColor:'#42523b'},buttonText:{color:'#11200c',fontSize:16,fontWeight:'700'},secondaryText:{color:'#e6eddf'},disabled:{opacity:0.5},pressed:{opacity:0.78},
-  card:{backgroundColor:'#1b271a',borderWidth:1,borderColor:'#35442d',borderRadius:20,padding:21,gap:8},urgent:{borderColor:'#b4dc7b',borderWidth:1.5},
-  row:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:12},tag:{color:'#c6f888',fontSize:11,letterSpacing:1.2,fontWeight:'700',flexShrink:1},
-  timer:{color:'#d9ffaf',fontSize:28,fontWeight:'800',fontVariant:['tabular-nums']},bigTimer:{color:'#c6f888',fontSize:64,fontWeight:'800',fontVariant:['tabular-nums']},
-  route:{fontSize:25,lineHeight:33,color:'#f3f6ef',fontWeight:'700',marginTop:5},meta:{color:'#b3c0ab',fontSize:14,lineHeight:22},cardAction:{color:'#dfe8d7',fontSize:14,fontWeight:'700',marginTop:12},
-  address:{color:'#f3f6ef',fontSize:19,lineHeight:28,fontWeight:'600'},divider:{height:1,backgroundColor:'#35442d',marginVertical:14},
-  link:{color:'#d0dfc4',fontSize:14,padding:10},footnote:{fontSize:12,lineHeight:20,color:'#99a990',marginTop:12},error:{color:'#ffb4a5',fontSize:14,lineHeight:22},
-  warning:{color:'#ffd194',fontSize:15,lineHeight:23},notice:{color:'#d2f6b3',backgroundColor:'#263b20',padding:16,borderRadius:12,fontSize:14,lineHeight:22},errorPanel:{backgroundColor:'#38251f',padding:16,borderRadius:14,gap:12},
+  safe:{flex:1,backgroundColor:colour.white},fill:{flex:1},header:{paddingHorizontal:20,paddingVertical:18,flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderBottomWidth:1,borderColor:colour.line},
+  brand:{gap:6},accent:{color:colour.cobalt},eyebrow:{fontFamily:font.medium,fontSize:13,color:colour.slate},
+  hero:{fontFamily:font.semibold,fontSize:40,lineHeight:46,color:colour.ink,marginTop:32,marginBottom:12},title:{fontFamily:font.semibold,fontSize:30,color:colour.ink,marginBottom:8},
+  auth:{flexGrow:1,padding:24,justifyContent:'center',gap:16,maxWidth:520,width:'100%',alignSelf:'center'},content:{padding:20,gap:20,paddingBottom:32},gap:{gap:18},
+  muted:{fontFamily:font.regular,color:colour.slate,fontSize:15,lineHeight:24},label:{fontFamily:font.semibold,color:colour.slate,fontSize:14,marginTop:6,marginBottom:8},
+  input:{fontFamily:font.regular,borderWidth:1,borderColor:colour.line,borderRadius:6,padding:16,color:colour.ink,fontSize:17,backgroundColor:colour.white,minHeight:54},
+  button:{backgroundColor:colour.ink,borderRadius:6,paddingVertical:16,paddingHorizontal:20,alignItems:'center',justifyContent:'center',minHeight:52},
+  secondary:{backgroundColor:colour.cloud,borderWidth:1,borderColor:colour.line},buttonText:{fontFamily:font.bold,color:colour.white,fontSize:16},secondaryText:{color:colour.ink},disabled:{opacity:0.5},pressed:{opacity:0.78},
+  card:{backgroundColor:colour.white,borderWidth:1,borderColor:colour.line,borderRadius:12,padding:20,gap:10},urgent:{borderColor:colour.cobalt,borderWidth:1.5},
+  row:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'},tag:{fontFamily:font.semibold,color:colour.slate,fontSize:13,flexShrink:1},pendingTag:{color:colour.cobalt,backgroundColor:colour.softBlue,paddingVertical:6,paddingHorizontal:10,borderRadius:6},
+  timer:{fontFamily:font.extrabold,color:colour.cobalt,fontSize:26,fontVariant:['tabular-nums']},bigTimer:{fontFamily:font.extrabold,color:colour.cobalt,fontSize:56,fontVariant:['tabular-nums']},
+  route:{fontFamily:font.bold,fontSize:24,lineHeight:33,color:colour.ink,marginTop:5},meta:{fontFamily:font.regular,color:colour.slate,fontSize:14,lineHeight:23},cardAction:{fontFamily:font.bold,color:colour.ink,fontSize:14,marginTop:12},
+  address:{fontFamily:font.semibold,color:colour.ink,fontSize:19,lineHeight:28},divider:{height:1,backgroundColor:colour.line,marginVertical:14},
+  accepted:{fontFamily:font.medium,color:colour.success,fontSize:15,lineHeight:24},link:{fontFamily:font.semibold,color:colour.slate,fontSize:14,padding:12,minHeight:44},footnote:{fontFamily:font.regular,fontSize:12,lineHeight:20,color:colour.slate,marginTop:12},domain:{fontFamily:font.semibold,color:colour.cobalt,fontSize:14,marginTop:8},error:{fontFamily:font.medium,color:colour.danger,fontSize:14,lineHeight:23},
+  warning:{fontFamily:font.medium,color:colour.warning,backgroundColor:colour.warningBg,padding:16,borderRadius:6,fontSize:15,lineHeight:24},notice:{fontFamily:font.medium,color:colour.success,backgroundColor:colour.successBg,padding:16,borderRadius:6,fontSize:14,lineHeight:23},errorPanel:{backgroundColor:colour.dangerBg,padding:16,borderRadius:6,gap:12},
+  navigation:{flexDirection:'row',borderTopWidth:1,borderColor:colour.line,padding:10,gap:8,backgroundColor:colour.white},navItem:{flex:1,minHeight:48,alignItems:'center',justifyContent:'center',borderRadius:6,padding:8},navSelected:{backgroundColor:colour.softBlue},navText:{fontFamily:font.semibold,color:colour.slate,fontSize:14,textAlign:'center'},navTextSelected:{color:colour.cobalt},
 });
