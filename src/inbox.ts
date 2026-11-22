@@ -20,7 +20,7 @@ export function notificationDestination(item: Pick<InboxItem, 'link' | 'kind'>):
 }
 
 // These links carry an assignment reference only. The signed-in driver feed supplies the job.
-export function driverDestinationFromUrl(value: string | null): DriverDestination | null {
+export function driverDestinationFromUrl(value: string | null | undefined): DriverDestination | null {
   if (!value) return null;
   let link: URL;
   try { link = new URL(value); } catch { return null; }
