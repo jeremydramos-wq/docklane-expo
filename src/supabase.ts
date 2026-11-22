@@ -28,3 +28,11 @@ export async function acknowledge(id:string) {
   const {error}=await supabase.rpc('docklane_acknowledge',{p_assignment:id});
   if(error)throw new Error(error.message);
 }
+
+export async function recordAwardOpened(id: string) {
+  const { error } = await supabase.rpc('docklane_pilot_event', {
+    p_kind: 'award_opened', p_org: null, p_ref: id, p_load: null, p_source: 'native',
+  });
+  // Older backends do not yet collect pilot events.
+  if (error && !['PGRST202', '42883'].includes(error.code)) throw new Error(error.message);
+}

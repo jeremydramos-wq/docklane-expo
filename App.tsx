@@ -3,11 +3,12 @@ import {useCallback,useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Alert,AppState,KeyboardAvoidingView,Linking,Platform,Pressable,RefreshControl,ScrollView,StatusBar,StyleSheet,Text,TextInput,View} from 'react-native';
 import {SafeAreaProvider,SafeAreaView} from 'react-native-safe-area-context';
 import type {Session} from '@supabase/supabase-js';
-import {acknowledge,driverJobs,supabase,watchAuthRefresh} from './src/supabase';
-import {acceptanceText,canAccept,clockOffset,directionsUrl,irishTime,mmss,orderJobs,remainingMs} from './src/jobs';
+import {acknowledge,driverJobs,recordAwardOpened,supabase,watchAuthRefresh} from './src/supabase';
+import {acceptanceText,canAccept,clockOffset,createJobLoader,directionsUrl,irishTime,mmss,orderJobs,remainingMs,resolveJobTarget} from './src/jobs';
 import type {DriverJob} from './src/jobs';
-import { DriverInbox, DriverDocuments } from './src/inbox-views';
-import type { InboxItem } from './src/inbox';
+import { DriverNotifications, DriverDocuments } from './src/inbox-views';
+import { driverDestinationFromUrl, notificationDestination } from './src/inbox';
+import type { DriverDestination } from './src/inbox';
 import {useFonts} from 'expo-font';
 import {brandFonts,colour,font,HaullerWordmark} from './src/brand';
 
@@ -55,8 +56,8 @@ function Detail({job,now,offset,busy,accept}:{job:DriverJob;now:number;offset:nu
   return <View style={s.gap}>
     <View style={[s.card,pending&&s.urgent]}>
       <Text style={[s.tag,pending&&s.pendingTag]}>{acceptanceText(job)}</Text>
-      {pending&&<><Text accessibilityRole="timer" accessibilityLiveRegion="none" style={s.bigTimer}>{mmss(remainingMs(job.accept_by,now,offset))}</Text>
-        <Text style={s.muted}>Time left to accept · deadline {irishTime(job.accept_by!)}</Text></>}
+      {pending&&job.accept_by&&<><Text accessibilityRole="timer" accessibilityLiveRegion="none" style={s.bigTimer}>{mmss(remainingMs(job.accept_by,now,offset))}</Text>
+        <Text style={s.muted}>Time left to accept · deadline {irishTime(job.accept_by)}</Text></>}
       <Text accessibilityRole="header" style={s.route}>{job.pickup_area} → {job.delivery_area}</Text>
       <Text style={s.meta}>All times shown in Irish time.</Text>
     </View>
@@ -68,60 +69,106 @@ function Detail({job,now,offset,busy,accept}:{job:DriverJob;now:number;offset:nu
       {!!job.delivery_address&&<Button secondary title="Directions to delivery" onPress={()=>navigate(job.delivery_address!)}/>}
     </View>
     <View style={s.card}><Text style={s.label}>Load</Text><Text style={s.address}>{job.equipment.replaceAll('_',' ')} · {job.pallets} pallets</Text><Text style={s.meta}>{job.weight_kg.toLocaleString('en-IE')} kg{job.haulier_name?' · '+job.haulier_name:''}</Text></View>
-    {canAccept(job,now,offset)&&<><Button title={busy?'Accepting…':'Confirm assignment'} disabled={busy} onPress={accept}/><Text style={s.footnote}>Acceptance acknowledges this assignment. It is not a signed carriage contract or permission to dispatch.</Text></>}
+    {canAccept(job,now,offset)&&<><Button title={busy?'Accepting…':'Accept job'} disabled={busy} onPress={accept}/><Text style={s.footnote}>Acceptance acknowledges this assignment. It is not a signed carriage contract or permission to dispatch.</Text></>}
     {!job.acknowledged_at&&!canAccept(job,now,offset)&&<Text accessibilityRole="alert" style={s.warning}>This award can no longer be accepted. Pull down to refresh your assignments.</Text>}
     {job.acknowledged_at&&<View style={s.card}><Text style={s.accepted}>{job.on_behalf?'Your haulier accepted this assignment on your behalf.':'You accepted this assignment.'}</Text><Text style={s.meta}>{irishTime(job.acknowledged_at)}</Text></View>}
   </View>;
 }
-function DriverWorkspace(){
+function DriverWorkspace({launchDestination,consumed}:{launchDestination:DriverDestination|null;consumed:()=>void}){
   const[jobs,setJobs]=useState<DriverJob[]>([]),[offset,setOffset]=useState(0),[now,setNow]=useState(Date.now()),[busy,setBusy]=useState(true),[loaded,setLoaded]=useState(false),[accepting,setAccepting]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState<string|null>(null);
-  const mounted=useRef(true),loading=useRef(false),expired=useRef(new Set<string>());
-  const [tab,setTab]=useState<'jobs'|'inbox'|'documents'>('jobs'),[unread,setUnread]=useState(0);
-  const refresh=useCallback(async()=>{
-    if(loading.current)return;loading.current=true;if(mounted.current)setBusy(true);
-    try{const sent=Date.now(),snapshot=await driverJobs(),received=Date.now();if(!mounted.current)return;
+  const mounted=useRef(true),expired=useRef(new Set<string>()),acceptInFlight=useRef(false);
+  const [jobLoader]=useState(()=>createJobLoader(driverJobs));
+  const [tab,setTab]=useState<'jobs'|'notifications'|'documents'>('jobs'),[unread,setUnread]=useState(0);
+  const refresh=useCallback(async(assignment?:string)=>{
+    if (!mounted.current) return;
+    setBusy(true);
+    try {
+      const result=await jobLoader.refresh(assignment);
+      if (!result || !mounted.current) return;
+      const {snapshot, requested, sent, received}=result;
       setJobs(orderJobs(snapshot.items));setOffset(clockOffset(snapshot.server_now,sent,received));setNow(received);setError('');setLoaded(true);
-      setSelected(current=>current&&snapshot.items.some(j=>j.id===current)?current:null);
-    }catch(e){if(mounted.current)setError(explain(e));}finally{loading.current=false;if(mounted.current)setBusy(false);}
-  },[]);
+      if (requested) {
+        const target=resolveJobTarget(snapshot.items,requested);
+        setSelected(target.selected);setNotice(target.notice);
+      } else {
+        setSelected(current=>current&&snapshot.items.some(j=>j.id===current)?current:null);
+      }
+    } catch(e) {
+      if (!mounted.current) return;
+      setError(explain(e));setNotice('');
+    }
+    setBusy(false);
+  },[jobLoader]);
   useEffect(()=>{
     mounted.current=true;void refresh();
     let active=AppState.currentState==='active';
     const tick=setInterval(()=>{if(active)setNow(Date.now());},1000);
     const poll=setInterval(()=>{if(active)void refresh();},15000);
     const listener=AppState.addEventListener('change',state=>{active=state==='active';if(active){setNow(Date.now());void refresh();}});
-    return()=>{mounted.current=false;clearInterval(tick);clearInterval(poll);listener.remove();};
-  },[refresh]);
+    return()=>{mounted.current=false;jobLoader.stop();clearInterval(tick);clearInterval(poll);listener.remove();};
+  },[refresh,jobLoader]);
   useEffect(()=>{
     for(const job of jobs)if(!job.acknowledged_at&&job.accept_by&&remainingMs(job.accept_by,now,offset)===0&&!expired.current.has(job.id)){
       expired.current.add(job.id);void refresh();break;
     }
   },[jobs,now,offset,refresh]);
-  async function accept(job:DriverJob){if(accepting||!canAccept(job,Date.now(),offset))return;setAccepting(true);setError('');
+  async function accept(job:DriverJob){if(acceptInFlight.current||!canAccept(job,Date.now(),offset))return;acceptInFlight.current=true;setAccepting(true);setError('');
     try{await acknowledge(job.id);if(mounted.current)setNotice('Assignment accepted. Your transport manager can see the update.');}
-    catch(e){if(mounted.current)setError(explain(e));}finally{await refresh();if(mounted.current)setAccepting(false);}
+    catch(e){if(mounted.current)setError(explain(e));}finally{await refresh();acceptInFlight.current=false;if(mounted.current)setAccepting(false);}
   }
   const selectedJob=jobs.find(j=>j.id===selected);
-  const openInbox=(item:InboxItem)=>{if(item.kind.startsWith('expiry')||item.link.view==='fleet_document'){setTab('documents');return;}setTab('jobs');setSelected(jobs.some(j=>j.id===item.link.ref)?item.link.ref!:null);void refresh();};
+  const openDestination=useCallback((destination:DriverDestination)=>{
+    jobLoader.cancelTarget();setSelected(null);setError('');setNotice('');setTab(destination.view);
+    if(destination.view==='documents')return;
+    if(destination.assignment){
+      setNotice('Checking this assignment…');void refresh(destination.assignment);
+    }else{
+      setNotice(destination.notice??'');void refresh();
+    }
+  },[jobLoader,refresh]);
+  useEffect(()=>{
+    if(launchDestination){openDestination(launchDestination);consumed();}
+  },[launchDestination,consumed,openDestination]);
+  const measured=useRef(new Set<string>());
+  useEffect(()=>{
+    if(tab!=='jobs'||!selectedJob||selectedJob.source!=='marketplace'||selectedJob.acceptance_state!=='awaiting_acceptance'||
+       !canAccept(selectedJob,Date.now(),offset)||measured.current.has(selectedJob.id))return;
+    const id=selectedJob.id;
+    measured.current.add(id);
+    void recordAwardOpened(id).catch(()=>measured.current.delete(id));
+  },[tab,selectedJob,offset]);
   const confirmAccept=()=>{if(selectedJob)Alert.alert('Confirm this assignment?','This acknowledges the job. It does not sign a carriage contract or grant permission to dispatch.',[{text:'Go back',style:'cancel'},{text:'Confirm assignment',onPress:()=>void accept(selectedJob)}]);};
   return <View style={s.fill}>
     <View style={s.header}><Brand/><Pressable accessibilityRole="button" onPress={()=>Alert.alert('Sign out?','You will be signed out on this device.',[{text:'Stay signed in',style:'cancel'},{text:'Sign out',onPress:()=>void supabase.auth.signOut({scope:'local'}).then(({error})=>{if(error)setError(error.message);})}])}><Text style={s.link}>Sign out</Text></Pressable></View>
-    {tab==='inbox'?<DriverInbox open={openInbox} changed={setUnread}/>:tab==='documents'?<DriverDocuments/>:
+    {tab==='notifications'?<DriverNotifications open={item=>openDestination(notificationDestination(item))} changed={setUnread}/>:tab==='documents'?<DriverDocuments/>:
     <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={busy&&loaded} onRefresh={()=>void refresh()} tintColor={colour.cobalt}/> }>
-      {selectedJob?<Button secondary title="All jobs" onPress={()=>setSelected(null)}/>:<View><Text accessibilityRole="header" style={s.title}>Your jobs</Text><Text style={s.muted}>{jobs.filter(j=>j.acceptance_state==='awaiting_acceptance').length} awaiting acceptance · Irish time</Text></View>}
+      {selectedJob?<Button secondary title="All jobs" onPress={()=>{jobLoader.cancelTarget();setSelected(null);}}/>:<View><Text accessibilityRole="header" style={s.title}>Your jobs</Text><Text style={s.muted}>{jobs.filter(j=>j.acceptance_state==='awaiting_acceptance').length} awaiting acceptance · Irish time</Text></View>}
       {!!notice&&<Text accessibilityRole="alert" style={s.notice}>{notice}</Text>}
       {!!error&&<View style={s.errorPanel}><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button secondary title="Refresh" onPress={()=>void refresh()}/></View>}
       {busy&&!loaded&&<ActivityIndicator accessibilityLabel="Loading assigned jobs" color={colour.cobalt} size="large"/>}
       {loaded&&!jobs.length&&<View style={s.card}><Text style={s.address}>No assigned jobs</Text><Text style={s.meta}>Your next assignment will appear here. Contact your transport manager if you expected a job.</Text><Button secondary title="Refresh jobs" onPress={()=>void refresh()}/></View>}
-      {selectedJob?<Detail job={selectedJob} now={now} offset={offset} busy={accepting} accept={confirmAccept}/>:jobs.map(job=><JobCard key={job.id} job={job} now={now} offset={offset} open={()=>{setSelected(job.id);setNotice('');}}/>)}
+      {selectedJob?<Detail job={selectedJob} now={now} offset={offset} busy={accepting} accept={confirmAccept}/>:jobs.map(job=><JobCard key={job.id} job={job} now={now} offset={offset} open={()=>{jobLoader.cancelTarget();setSelected(job.id);setNotice('');}}/>)}
       <Text style={s.footnote}>Pull down to refresh. Deadlines are controlled by Hauller; changing the phone clock does not extend an award.</Text>
     </ScrollView>}
-    <View accessibilityRole="tablist" style={s.navigation}>{(['jobs','inbox','documents'] as const).map(key=><Pressable key={key} accessibilityRole="tab" accessibilityState={{selected:tab===key}} onPress={()=>setTab(key)} style={[s.navItem,tab===key&&s.navSelected]}><Text style={[s.navText,tab===key&&s.navTextSelected]}>{key==='jobs'?'Jobs':key==='inbox'?'Inbox'+(unread?' ('+unread+')':''):'Documents'}</Text></Pressable>)}</View>
+    <View accessibilityRole="tablist" style={s.navigation}>{(['jobs','notifications','documents'] as const).map(key=><Pressable key={key} accessibilityRole="tab" accessibilityState={{selected:tab===key}} onPress={()=>{jobLoader.cancelTarget();setNotice('');setTab(key);}} style={[s.navItem,tab===key&&s.navSelected]}><Text style={[s.navText,tab===key&&s.navTextSelected]}>{key==='jobs'?'Jobs':key==='notifications'?'Notifications'+(unread?' ('+unread+')':''):'Documents'}</Text></Pressable>)}</View>
   </View>;
 }
 export default function App(){
   const[fontsLoaded,fontError]=useFonts(brandFonts);
   const[session,setSession]=useState<Session|null|undefined>(),[error,setError]=useState('');
+  const[launchDestination,setLaunchDestination]=useState<DriverDestination|null>(null);
+  const consumed=useCallback(()=>setLaunchDestination(null),[]);
+  useEffect(()=>{
+    let active=true,receivedLink=false;
+    const listener=Linking.addEventListener('url',({url})=>{
+      const next=driverDestinationFromUrl(url);
+      if(next){receivedLink=true;setLaunchDestination(next);}
+    });
+    void Linking.getInitialURL().then(url=>{
+      if(active&&!receivedLink){const next=driverDestinationFromUrl(url);if(next)setLaunchDestination(next);}
+    }).catch(()=>{});
+    return()=>{active=false;listener.remove();};
+  },[]);
   useEffect(()=>{let active=true;const stop=watchAuthRefresh();
     void supabase.auth.getSession().then(({data,error})=>{if(active){setSession(data.session);if(error)setError(error.message);}}).catch(e=>{if(active){setError(explain(e));setSession(null);}});
     const{data}=supabase.auth.onAuthStateChange((_event,next)=>{if(active)setSession(next);});
@@ -129,7 +176,7 @@ export default function App(){
   },[]);
   return <SafeAreaProvider><SafeAreaView style={s.safe}><StatusBar barStyle="dark-content"/>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    {(!fontsLoaded&&!fontError)||session===undefined?<ActivityIndicator accessibilityLabel="Loading account" color={colour.cobalt} style={s.fill}/>:session?<DriverWorkspace key={session.user.id}/>:<Auth/>}
+    {(!fontsLoaded&&!fontError)||session===undefined?<ActivityIndicator accessibilityLabel="Loading account" color={colour.cobalt} style={s.fill}/>:session?<DriverWorkspace key={session.user.id} launchDestination={launchDestination} consumed={consumed}/>:<Auth/>}
   </SafeAreaView></SafeAreaProvider>;
 }
 const s=StyleSheet.create({

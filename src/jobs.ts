@@ -7,6 +7,42 @@ export type DriverJob = {
   haulier_name: string | null; source: 'marketplace' | 'operator' | 'legacy';
 };
 export type Snapshot = { server_now: string; items: DriverJob[] };
+
+// A notification starts a new read even while an older poll is in flight. Only the
+// latest read may deliver jobs or resolve the requested assignment. A failed read
+// leaves the target available for Retry.
+export function createJobLoader(read: () => Promise<Snapshot>) {
+  let sequence = 0;
+  let loading = false;
+  let target: string | null = null;
+  return {
+    cancelTarget() { target = null; },
+    stop() { sequence++; loading = false; target = null; },
+    async refresh(assignment?: string) {
+      if (assignment) target = assignment;
+      else if (loading) return;
+      const request = ++sequence;
+      const sent = Date.now();
+      loading = true;
+      try {
+        const snapshot = await read();
+        if (request !== sequence) return;
+        const requested = target;
+        target = null;
+        return { snapshot, requested, sent, received: Date.now() };
+      } catch (error) {
+        if (request === sequence) throw error;
+      } finally {
+        if (request === sequence) loading = false;
+      }
+    },
+  };
+}
+
+export function resolveJobTarget(items: DriverJob[], requested: string) {
+  if (items.some(job => job.id === requested)) return { selected: requested, notice: '' };
+  return { selected: null, notice: 'This assignment is no longer on your jobs list. It may have expired or been reassigned.' };
+}
 const states = new Set<AcceptanceState>(['awaiting_acceptance','awaiting_driver','accepted','accepted_on_behalf','timed_out','released','expired']);
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 const str = (v: unknown) => typeof v === 'string' ? v : '';
