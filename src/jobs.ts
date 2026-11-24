@@ -94,3 +94,19 @@ export function clockOffset(serverNow:string,sent:number,received:number):number
 }
 export const irishTime=(value:string)=>new Intl.DateTimeFormat('en-IE',{timeZone:'Europe/Dublin',dateStyle:'medium',timeStyle:'short'}).format(new Date(value));
 export const directionsUrl=(address:string)=>'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(address);
+
+/** The overview follows the collection schedule. The separate jobs list still prioritises awards needing a response. */
+export function nextCollection(jobs: readonly DriverJob[], serverNow: number): DriverJob | undefined {
+  let next: DriverJob | undefined;
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const job of jobs) {
+    const confirmed = job.acceptance_state === 'accepted' || job.acceptance_state === 'accepted_on_behalf';
+    if (!confirmed || Date.parse(job.pickup_until) <= serverNow) continue;
+    const starts = Date.parse(job.pickup_from);
+    if (starts < earliest || (starts === earliest && next && job.id < next.id)) {
+      next = job;
+      earliest = starts;
+    }
+  }
+  return next;
+}
